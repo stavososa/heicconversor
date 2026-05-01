@@ -9,6 +9,10 @@ export type DetectedKind = "heic" | "jpeg" | "png" | "webp" | "unknown";
 
 let heicToPromise: Promise<typeof import("heic-to").heicTo> | null = null;
 
+const OUTPUT_TARGET_RATIO = 0.85;
+const QUALITY_STEPS = [0.8, 0.7, 0.6, 0.5, 0.42, 0.35, 0.28];
+const SCALE_STEPS = [1, 0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.45];
+
 const loadHeicTo = () => {
   if (!heicToPromise) {
     heicToPromise = import("heic-to").then((m) => m.heicTo);
@@ -73,24 +77,38 @@ export const renameToJpg = (filename: string): string => {
   return filename.replace(/\.(heic|heif|jpe?g|png|webp)$/i, "") + ".jpg";
 };
 
-/** Re-encode any browser-supported image (PNG/WebP/JPEG) to JPEG via canvas. */
-const reencodeViaCanvas = async (source: Blob, quality: number): Promise<Blob> => {
+const buildQualitySteps = (quality: number) => {
+  const preferred = Math.min(0.92, Math.max(0.2, quality));
+  return Array.from(new Set([preferred, ...QUALITY_STEPS])).sort((a, b) => b - a);
+};
+
+const loadImageFromBlob = async (source: Blob): Promise<HTMLImageElement> => {
   const url = URL.createObjectURL(source);
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    return await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
       el.onload = () => resolve(el);
       el.onerror = () => reject(new Error("Não foi possível ler a imagem."));
       el.src = url;
     });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
+const encodeImageAsJpeg = async (
+  img: HTMLImageElement,
+  quality: number,
+  scale: number,
+): Promise<Blob> => {
     const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas indisponível.");
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     return await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
         (b) => (b ? resolve(b) : reject(new Error("Falha ao gerar JPEG."))),
@@ -98,9 +116,28 @@ const reencodeViaCanvas = async (source: Blob, quality: number): Promise<Blob> =
         quality,
       );
     });
-  } finally {
-    URL.revokeObjectURL(url);
+};
+
+/** Compress any browser-supported image to JPEG and keep lowering quality/size until it is smaller than the input. */
+const compressToSmallerJpeg = async (
+  source: Blob,
+  quality: number,
+  originalSize: number,
+): Promise<Blob> => {
+  const img = await loadImageFromBlob(source);
+  const targetSize = Math.max(1, Math.floor(originalSize * OUTPUT_TARGET_RATIO));
+  const qualitySteps = buildQualitySteps(quality);
+  let smallest: Blob | null = null;
+
+  for (const scale of SCALE_STEPS) {
+    for (const q of qualitySteps) {
+      const blob = await encodeImageAsJpeg(img, q, scale);
+      if (!smallest || blob.size < smallest.size) smallest = blob;
+      if (blob.size <= targetSize) return blob;
+    }
   }
+
+  return smallest ?? source;
 };
 
 /**
@@ -120,11 +157,12 @@ export const convertToJpeg = async (
       const heicTo = await loadHeicTo();
       // First decode HEIC -> JPEG via heic-to (quality hint may be ignored).
       const decoded = await heicTo({ blob: file, type: "image/jpeg", quality });
-      // Then re-encode through canvas to actually enforce the target quality
-      // and reduce file size (heic-to often returns larger-than-original blobs).
-      const blob = await reencodeViaCanvas(decoded, quality);
+      // Then compress through canvas, lowering quality and dimensions when needed
+      // so the generated JPEG does not come out larger than the HEIC input.
+      const blob = await compressToSmallerJpeg(decoded, quality, file.size);
       console.log("[convert] heic ok", {
         name: file.name,
+        originalSize: file.size,
         decodedSize: decoded.size,
         outSize: blob.size,
       });
@@ -140,18 +178,12 @@ export const convertToJpeg = async (
   }
 
   if (kind === "jpeg") {
-    // If user wants high quality, just pass-through to preserve original.
-    // Otherwise, re-encode to actually reduce file size.
-    if (quality >= 0.95) {
-      const blob = file.slice(0, file.size, "image/jpeg");
-      return { blob, url: URL.createObjectURL(blob) };
-    }
-    const blob = await reencodeViaCanvas(file, quality);
+    const blob = await compressToSmallerJpeg(file, quality, file.size);
     return { blob, url: URL.createObjectURL(blob) };
   }
 
   if (kind === "png" || kind === "webp") {
-    const blob = await reencodeViaCanvas(file, quality);
+    const blob = await compressToSmallerJpeg(file, quality, file.size);
     return { blob, url: URL.createObjectURL(blob) };
   }
 
