@@ -2,23 +2,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Trash2, Upload, ShieldCheck, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
-import { Label } from "@/components/ui/label";
 import { FileRow, type FileItem } from "./FileRow";
 import { convertToJpeg, renameToJpg } from "@/lib/heic";
 import { buildZip, downloadBlob } from "@/lib/zip";
 
 const MAX_CONCURRENCY = 3;
 const MAX_SIZE_MB = 50;
+const JPEG_QUALITY = 0.8; // fixed compression to reduce file size
 
 export const HeicConverter = () => {
   const [items, setItems] = useState<FileItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [zipping, setZipping] = useState(false);
-  const [quality, setQuality] = useState(80); // percent
   const inputRef = useRef<HTMLInputElement>(null);
-  const qualityRef = useRef(quality);
-  qualityRef.current = quality;
 
   // Queue: track pending IDs and run them with limited concurrency.
   const queueRef = useRef<string[]>([]);
@@ -39,7 +35,7 @@ export const HeicConverter = () => {
       updateItem(id, { status: "converting" });
       (async () => {
         try {
-          const { blob, url } = await convertToJpeg(item.file, qualityRef.current / 100);
+          const { blob, url } = await convertToJpeg(item.file, JPEG_QUALITY);
           updateItem(id, {
             status: "done",
             outBlob: blob,
@@ -239,29 +235,7 @@ export const HeicConverter = () => {
         />
       </div>
 
-      {/* Quality control */}
-      <div className="mt-6 rounded-lg border border-border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between gap-4">
-          <Label htmlFor="quality" className="text-sm font-medium">
-            Qualidade do JPEG
-          </Label>
-          <span className="text-sm font-semibold tabular-nums text-foreground">
-            {quality}%
-          </span>
-        </div>
-        <Slider
-          id="quality"
-          min={30}
-          max={100}
-          step={5}
-          value={[quality]}
-          onValueChange={(v) => setQuality(v[0])}
-          disabled={isConverting}
-        />
-        <p className="mt-2 text-xs text-muted-foreground">
-          Menor qualidade = arquivos menores. Recomendado: 70–85% para boa compressão sem perda visível.
-        </p>
-      </div>
+      {/* Toolbar */}
 
       {/* Toolbar */}
       {items.length > 0 && (
