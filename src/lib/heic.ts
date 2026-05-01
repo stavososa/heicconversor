@@ -163,19 +163,23 @@ const compressToSmallerJpeg = async (
   originalSize: number,
 ): Promise<Blob> => {
   const img = await loadImageFromBlob(source);
-  const targetSize = Math.max(1, Math.floor(originalSize * OUTPUT_TARGET_RATIO));
-  const qualitySteps = buildQualitySteps(quality);
-  let smallest: Blob | null = null;
+  try {
+    const targetSize = Math.max(1, Math.floor(originalSize * OUTPUT_TARGET_RATIO));
+    const qualitySteps = buildQualitySteps(quality);
+    let smallest: Blob | null = null;
 
-  for (const scale of SCALE_STEPS) {
-    for (const q of qualitySteps) {
-      const blob = await encodeImageAsJpeg(img, q, scale);
-      if (!smallest || blob.size < smallest.size) smallest = blob;
-      if (blob.size <= targetSize) return blob;
+    for (const scale of SCALE_STEPS) {
+      for (const q of qualitySteps) {
+        const blob = await encodeImageAsJpeg(img, q, scale);
+        if (!smallest || blob.size < smallest.size) smallest = blob;
+        if (blob.size <= targetSize) return blob;
+      }
     }
-  }
 
-  return smallest ?? source;
+    return smallest ?? source;
+  } finally {
+    img.close();
+  }
 };
 
 /**
