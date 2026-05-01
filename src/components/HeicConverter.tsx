@@ -35,7 +35,7 @@ export const HeicConverter = () => {
       updateItem(id, { status: "converting" });
       (async () => {
         try {
-          const { blob, url } = await convertToJpeg(item.file, qualityRef.current / 100);
+          const { blob, url } = await convertToJpeg(item.file, JPEG_QUALITY);
           updateItem(id, {
             status: "done",
             outBlob: blob,
