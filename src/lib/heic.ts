@@ -1,10 +1,11 @@
-// Helper to convert HEIC/HEIF files to JPEG using heic2any (browser-only).
-// heic2any depends on `window`, so we lazy-import it.
+// Helper to convert HEIC/HEIF/JPEG/PNG/WebP files to JPEG (browser-only).
 
 export type ConvertResult = {
   blob: Blob;
   url: string;
 };
+
+export type DetectedKind = "heic" | "jpeg" | "png" | "webp" | "unknown";
 
 let heic2anyPromise: Promise<typeof import("heic2any").default> | null = null;
 
@@ -15,35 +16,119 @@ const loadHeic2any = () => {
   return heic2anyPromise;
 };
 
-export const isHeicFile = (file: File): boolean => {
-  const name = file.name.toLowerCase();
-  const type = file.type.toLowerCase();
-  return (
-    name.endsWith(".heic") ||
-    name.endsWith(".heif") ||
-    type === "image/heic" ||
-    type === "image/heif" ||
-    // Some browsers leave type empty for HEIC; fall back to extension only.
-    (type === "" && (name.endsWith(".heic") || name.endsWith(".heif")))
-  );
+/**
+ * Inspect the first bytes of a file to detect its real format.
+ * iPhones often save HEIC photos with a `.jpg` extension, so we cannot
+ * trust the filename or MIME type alone.
+ */
+export const detectKind = async (file: File): Promise<DetectedKind> => {
+  const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+  // ISO-BMFF (HEIC/HEIF): bytes 4..8 == "ftyp", brand at 8..12
+  if (
+    head.length >= 12 &&
+    head[4] === 0x66 &&
+    head[5] === 0x74 &&
+    head[6] === 0x79 &&
+    head[7] === 0x70
+  ) {
+    const brand = String.fromCharCode(head[8], head[9], head[10], head[11]);
+    const heicBrands = new Set([
+      "heic",
+      "heix",
+      "hevc",
+      "hevx",
+      "heim",
+      "heis",
+      "hevm",
+      "hevs",
+      "mif1",
+      "msf1",
+      "heif",
+    ]);
+    if (heicBrands.has(brand)) return "heic";
+  }
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "jpeg";
+  if (
+    head[0] === 0x89 &&
+    head[1] === 0x50 &&
+    head[2] === 0x4e &&
+    head[3] === 0x47
+  )
+    return "png";
+  if (
+    head[0] === 0x52 &&
+    head[1] === 0x49 &&
+    head[2] === 0x46 &&
+    head[3] === 0x46 &&
+    head[8] === 0x57 &&
+    head[9] === 0x45 &&
+    head[10] === 0x42 &&
+    head[11] === 0x50
+  )
+    return "webp";
+  return "unknown";
 };
 
 export const renameToJpg = (filename: string): string => {
-  return filename.replace(/\.(heic|heif)$/i, "") + ".jpg";
+  return filename.replace(/\.(heic|heif|jpe?g|png|webp)$/i, "") + ".jpg";
 };
 
-export const convertHeicToJpeg = async (
+/** Re-encode any browser-supported image (PNG/WebP) to JPEG via canvas. */
+const reencodeViaCanvas = async (file: File, quality: number): Promise<Blob> => {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+      el.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas indisponível.");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("Falha ao gerar JPEG."))),
+        "image/jpeg",
+        quality,
+      );
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
+/**
+ * Convert a file to JPEG. Accepts real HEIC (even when named `.jpg`),
+ * passes through real JPEGs, and re-encodes PNG/WebP via canvas.
+ */
+export const convertToJpeg = async (
   file: File,
   quality = 0.95,
 ): Promise<ConvertResult> => {
-  const heic2any = await loadHeic2any();
-  const result = await heic2any({
-    blob: file,
-    toType: "image/jpeg",
-    quality,
-  });
-  // heic2any may return Blob or Blob[] (multi-image HEIC). Use first.
-  const blob = Array.isArray(result) ? result[0] : result;
-  const url = URL.createObjectURL(blob);
-  return { blob, url };
+  const kind = await detectKind(file);
+
+  if (kind === "heic") {
+    const heic2any = await loadHeic2any();
+    const result = await heic2any({ blob: file, toType: "image/jpeg", quality });
+    const blob = Array.isArray(result) ? result[0] : result;
+    return { blob, url: URL.createObjectURL(blob) };
+  }
+
+  if (kind === "jpeg") {
+    const blob = file.slice(0, file.size, "image/jpeg");
+    return { blob, url: URL.createObjectURL(blob) };
+  }
+
+  if (kind === "png" || kind === "webp") {
+    const blob = await reencodeViaCanvas(file, quality);
+    return { blob, url: URL.createObjectURL(blob) };
+  }
+
+  throw new Error("Formato não suportado (use HEIC, JPG, PNG ou WebP).");
 };
