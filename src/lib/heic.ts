@@ -82,33 +82,71 @@ const buildQualitySteps = (quality: number) => {
   return Array.from(new Set([preferred, ...QUALITY_STEPS])).sort((a, b) => b - a);
 };
 
-const loadImageFromBlob = async (source: Blob): Promise<HTMLImageElement> => {
-  const url = URL.createObjectURL(source);
-  try {
-    return await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Não foi possível ler a imagem."));
-      el.src = url;
-    });
-  } finally {
-    URL.revokeObjectURL(url);
+type DecodedImage = {
+  width: number;
+  height: number;
+  draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void;
+  close: () => void;
+};
+
+const loadImageFromBlob = async (source: Blob): Promise<DecodedImage> => {
+  // Prefer createImageBitmap — it decodes off-thread and is reliable for blobs.
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bmp = await createImageBitmap(source);
+      if (bmp.width > 0 && bmp.height > 0) {
+        return {
+          width: bmp.width,
+          height: bmp.height,
+          draw: (ctx, w, h) => ctx.drawImage(bmp, 0, 0, w, h),
+          close: () => bmp.close(),
+        };
+      }
+      bmp.close();
+    } catch (err) {
+      console.warn("[convert] createImageBitmap failed, falling back to <img>", err);
+    }
   }
+
+  const url = URL.createObjectURL(source);
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+    el.src = url;
+  });
+  if (typeof img.decode === "function") {
+    try {
+      await img.decode();
+    } catch {
+      /* ignore — onload already fired */
+    }
+  }
+  if (!img.naturalWidth || !img.naturalHeight) {
+    URL.revokeObjectURL(url);
+    throw new Error("Imagem decodificada está vazia.");
+  }
+  return {
+    width: img.naturalWidth,
+    height: img.naturalHeight,
+    draw: (ctx, w, h) => ctx.drawImage(img, 0, 0, w, h),
+    close: () => URL.revokeObjectURL(url),
+  };
 };
 
 const encodeImageAsJpeg = async (
-  img: HTMLImageElement,
+  img: DecodedImage,
   quality: number,
   scale: number,
 ): Promise<Blob> => {
     const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas indisponível.");
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    img.draw(ctx, canvas.width, canvas.height);
     return await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
         (b) => (b ? resolve(b) : reject(new Error("Falha ao gerar JPEG."))),
