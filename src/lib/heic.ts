@@ -7,13 +7,13 @@ export type ConvertResult = {
 
 export type DetectedKind = "heic" | "jpeg" | "png" | "webp" | "unknown";
 
-let heic2anyPromise: Promise<typeof import("heic2any").default> | null = null;
+let heicToPromise: Promise<typeof import("heic-to").heicTo> | null = null;
 
-const loadHeic2any = () => {
-  if (!heic2anyPromise) {
-    heic2anyPromise = import("heic2any").then((m) => m.default);
+const loadHeicTo = () => {
+  if (!heicToPromise) {
+    heicToPromise = import("heic-to").then((m) => m.heicTo);
   }
-  return heic2anyPromise;
+  return heicToPromise;
 };
 
 /**
@@ -117,13 +117,12 @@ export const convertToJpeg = async (
 
   if (kind === "heic" || (kind === "unknown" && extLooksHeic)) {
     try {
-      const heic2any = await loadHeic2any();
-      const result = await heic2any({ blob: file, toType: "image/jpeg", quality });
-      const blob = Array.isArray(result) ? result[0] : result;
+      const heicTo = await loadHeicTo();
+      const blob = await heicTo({ blob: file, type: "image/jpeg", quality });
       console.log("[convert] heic ok", { name: file.name, outSize: blob.size });
       return { blob, url: URL.createObjectURL(blob) };
     } catch (err) {
-      console.error("[convert] heic2any failed", { name: file.name, err });
+      console.error("[convert] heic-to failed", { name: file.name, err });
       const msg =
         err && typeof err === "object" && "message" in err
           ? String((err as { message: unknown }).message)
