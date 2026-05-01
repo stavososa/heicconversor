@@ -73,9 +73,9 @@ export const renameToJpg = (filename: string): string => {
   return filename.replace(/\.(heic|heif|jpe?g|png|webp)$/i, "") + ".jpg";
 };
 
-/** Re-encode any browser-supported image (PNG/WebP) to JPEG via canvas. */
-const reencodeViaCanvas = async (file: File, quality: number): Promise<Blob> => {
-  const url = URL.createObjectURL(file);
+/** Re-encode any browser-supported image (PNG/WebP/JPEG) to JPEG via canvas. */
+const reencodeViaCanvas = async (source: Blob, quality: number): Promise<Blob> => {
+  const url = URL.createObjectURL(source);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
@@ -118,8 +118,16 @@ export const convertToJpeg = async (
   if (kind === "heic" || (kind === "unknown" && extLooksHeic)) {
     try {
       const heicTo = await loadHeicTo();
-      const blob = await heicTo({ blob: file, type: "image/jpeg", quality });
-      console.log("[convert] heic ok", { name: file.name, outSize: blob.size });
+      // First decode HEIC -> JPEG via heic-to (quality hint may be ignored).
+      const decoded = await heicTo({ blob: file, type: "image/jpeg", quality });
+      // Then re-encode through canvas to actually enforce the target quality
+      // and reduce file size (heic-to often returns larger-than-original blobs).
+      const blob = await reencodeViaCanvas(decoded, quality);
+      console.log("[convert] heic ok", {
+        name: file.name,
+        decodedSize: decoded.size,
+        outSize: blob.size,
+      });
       return { blob, url: URL.createObjectURL(blob) };
     } catch (err) {
       console.error("[convert] heic-to failed", { name: file.name, err });
