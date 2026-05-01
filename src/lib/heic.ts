@@ -118,8 +118,16 @@ export const convertToJpeg = async (
   if (kind === "heic" || (kind === "unknown" && extLooksHeic)) {
     try {
       const heicTo = await loadHeicTo();
-      const blob = await heicTo({ blob: file, type: "image/jpeg", quality });
-      console.log("[convert] heic ok", { name: file.name, outSize: blob.size });
+      // First decode HEIC -> JPEG via heic-to (quality hint may be ignored).
+      const decoded = await heicTo({ blob: file, type: "image/jpeg", quality });
+      // Then re-encode through canvas to actually enforce the target quality
+      // and reduce file size (heic-to often returns larger-than-original blobs).
+      const blob = await reencodeViaCanvas(decoded, quality);
+      console.log("[convert] heic ok", {
+        name: file.name,
+        decodedSize: decoded.size,
+        outSize: blob.size,
+      });
       return { blob, url: URL.createObjectURL(blob) };
     } catch (err) {
       console.error("[convert] heic-to failed", { name: file.name, err });
