@@ -202,15 +202,15 @@ export const HeicConverter = () => {
           }`}
         />
         <p className="text-base font-medium text-foreground">
-          Arraste arquivos HEIC aqui
+          Arraste suas imagens aqui
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          ou clique para selecionar (até {MAX_SIZE_MB} MB cada)
+          HEIC, JPG, PNG ou WebP — até {MAX_SIZE_MB} MB cada
         </p>
         <input
           ref={inputRef}
           type="file"
-          accept=".heic,.heif,image/heic,image/heif"
+          accept=".heic,.heif,.jpg,.jpeg,.png,.webp,image/*"
           multiple
           onChange={handleInputChange}
           className="hidden"
