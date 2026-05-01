@@ -7,13 +7,13 @@ export type ConvertResult = {
 
 export type DetectedKind = "heic" | "jpeg" | "png" | "webp" | "unknown";
 
-let heic2anyPromise: Promise<typeof import("heic2any").default> | null = null;
+let heicToPromise: Promise<typeof import("heic-to").heicTo> | null = null;
 
-const loadHeic2any = () => {
-  if (!heic2anyPromise) {
-    heic2anyPromise = import("heic2any").then((m) => m.default);
+const loadHeicTo = () => {
+  if (!heicToPromise) {
+    heicToPromise = import("heic-to").then((m) => m.heicTo);
   }
-  return heic2anyPromise;
+  return heicToPromise;
 };
 
 /**
@@ -112,12 +112,23 @@ export const convertToJpeg = async (
   quality = 0.95,
 ): Promise<ConvertResult> => {
   const kind = await detectKind(file);
+  const extLooksHeic = /\.(heic|heif)$/i.test(file.name);
+  console.log("[convert] start", { name: file.name, size: file.size, type: file.type, detected: kind });
 
-  if (kind === "heic") {
-    const heic2any = await loadHeic2any();
-    const result = await heic2any({ blob: file, toType: "image/jpeg", quality });
-    const blob = Array.isArray(result) ? result[0] : result;
-    return { blob, url: URL.createObjectURL(blob) };
+  if (kind === "heic" || (kind === "unknown" && extLooksHeic)) {
+    try {
+      const heicTo = await loadHeicTo();
+      const blob = await heicTo({ blob: file, type: "image/jpeg", quality });
+      console.log("[convert] heic ok", { name: file.name, outSize: blob.size });
+      return { blob, url: URL.createObjectURL(blob) };
+    } catch (err) {
+      console.error("[convert] heic-to failed", { name: file.name, err });
+      const msg =
+        err && typeof err === "object" && "message" in err
+          ? String((err as { message: unknown }).message)
+          : "Falha ao decodificar HEIC.";
+      throw new Error(`HEIC: ${msg}`);
+    }
   }
 
   if (kind === "jpeg") {
@@ -130,5 +141,5 @@ export const convertToJpeg = async (
     return { blob, url: URL.createObjectURL(blob) };
   }
 
-  throw new Error("Formato não suportado (use HEIC, JPG, PNG ou WebP).");
+  throw new Error(`Formato não reconhecido (detectado: ${kind}).`);
 };
