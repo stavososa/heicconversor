@@ -73,9 +73,9 @@ export const renameToJpg = (filename: string): string => {
   return filename.replace(/\.(heic|heif|jpe?g|png|webp)$/i, "") + ".jpg";
 };
 
-/** Re-encode any browser-supported image (PNG/WebP) to JPEG via canvas. */
-const reencodeViaCanvas = async (file: File, quality: number): Promise<Blob> => {
-  const url = URL.createObjectURL(file);
+/** Re-encode any browser-supported image (PNG/WebP/JPEG) to JPEG via canvas. */
+const reencodeViaCanvas = async (source: Blob, quality: number): Promise<Blob> => {
+  const url = URL.createObjectURL(source);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
