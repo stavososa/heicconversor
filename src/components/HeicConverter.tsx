@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Trash2, Upload, ShieldCheck } from "lucide-react";
+import { Download, Trash2, Upload, ShieldCheck, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { FileRow, type FileItem } from "./FileRow";
@@ -92,12 +92,25 @@ export const HeicConverter = () => {
         outName: renameToJpg(file.name),
       }));
       setItems((prev) => [...prev, ...newItems]);
-      queueRef.current.push(...newItems.map((it) => it.id));
-      // Defer to next tick so itemsRef is updated.
-      setTimeout(() => runNext(), 0);
     },
-    [runNext],
+    [],
   );
+
+  const handleConvert = useCallback(() => {
+    const pendingIds = itemsRef.current
+      .filter((it) => it.status === "pending" || it.status === "error")
+      .map((it) => it.id);
+    if (pendingIds.length === 0) {
+      toast.info("Nada para converter.");
+      return;
+    }
+    // Reset error items back to pending so they get retried.
+    setItems((prev) =>
+      prev.map((it) => (it.status === "error" ? { ...it, status: "pending", error: undefined } : it)),
+    );
+    queueRef.current.push(...pendingIds);
+    setTimeout(() => runNext(), 0);
+  }, [runNext]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) addFiles(e.target.files);
