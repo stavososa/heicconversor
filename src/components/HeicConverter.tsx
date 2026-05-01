@@ -3,7 +3,7 @@ import { Download, Trash2, Upload, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { FileRow, type FileItem } from "./FileRow";
-import { convertHeicToJpeg, isHeicFile, renameToJpg } from "@/lib/heic";
+import { convertToJpeg, renameToJpg } from "@/lib/heic";
 import { buildZip, downloadBlob } from "@/lib/zip";
 
 const MAX_CONCURRENCY = 3;
@@ -34,7 +34,7 @@ export const HeicConverter = () => {
       updateItem(id, { status: "converting" });
       (async () => {
         try {
-          const { blob, url } = await convertHeicToJpeg(item.file, 0.95);
+          const { blob, url } = await convertToJpeg(item.file, 0.95);
           updateItem(id, {
             status: "done",
             outBlob: blob,
@@ -60,21 +60,22 @@ export const HeicConverter = () => {
       let rejected = 0;
       let oversized = 0;
       for (const f of incoming) {
-        if (!isHeicFile(f)) {
-          rejected += 1;
-          continue;
-        }
         if (f.size > MAX_SIZE_MB * 1024 * 1024) {
           oversized += 1;
+          continue;
+        }
+        const looksLikeImage =
+          f.type.startsWith("image/") ||
+          /\.(heic|heif|jpe?g|png|webp)$/i.test(f.name);
+        if (!looksLikeImage) {
+          rejected += 1;
           continue;
         }
         valid.push(f);
       }
       if (rejected > 0) {
         toast.error(
-          rejected === 1
-            ? "1 arquivo ignorado (apenas .heic ou .heif)."
-            : `${rejected} arquivos ignorados (apenas .heic ou .heif).`,
+          `${rejected} arquivo(s) ignorado(s) (use HEIC, JPG, PNG ou WebP).`,
         );
       }
       if (oversized > 0) {
