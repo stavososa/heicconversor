@@ -132,7 +132,13 @@ export const convertToJpeg = async (
   }
 
   if (kind === "jpeg") {
-    const blob = file.slice(0, file.size, "image/jpeg");
+    // If user wants high quality, just pass-through to preserve original.
+    // Otherwise, re-encode to actually reduce file size.
+    if (quality >= 0.95) {
+      const blob = file.slice(0, file.size, "image/jpeg");
+      return { blob, url: URL.createObjectURL(blob) };
+    }
+    const blob = await reencodeViaCanvas(file, quality);
     return { blob, url: URL.createObjectURL(blob) };
   }
 
