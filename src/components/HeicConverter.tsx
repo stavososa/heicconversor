@@ -171,6 +171,10 @@ export const HeicConverter = () => {
 
   const readyCount = items.filter((it) => it.status === "done").length;
   const convertingCount = items.filter((it) => it.status === "converting").length;
+  const pendingCount = items.filter(
+    (it) => it.status === "pending" || it.status === "error",
+  ).length;
+  const isConverting = convertingCount > 0;
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:py-16">
@@ -237,23 +241,36 @@ export const HeicConverter = () => {
             {items.length} arquivo(s) • {readyCount} pronto(s)
             {convertingCount > 0 && ` • ${convertingCount} em andamento`}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={handleClear}
-              disabled={zipping}
+              disabled={zipping || isConverting}
             >
               <Trash2 className="mr-1.5 h-4 w-4" />
               Limpar lista
             </Button>
             <Button
               size="sm"
+              onClick={handleConvert}
+              disabled={pendingCount === 0 || isConverting}
+            >
+              <Wand2 className="mr-1.5 h-4 w-4" />
+              {isConverting
+                ? "Convertendo…"
+                : pendingCount > 0
+                ? `Converter (${pendingCount})`
+                : "Converter"}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
               onClick={handleDownloadAll}
               disabled={readyCount === 0 || zipping}
             >
               <Download className="mr-1.5 h-4 w-4" />
-              {zipping ? "Gerando ZIP…" : `Baixar tudo (ZIP)`}
+              {zipping ? "Gerando ZIP…" : "Baixar tudo (ZIP)"}
             </Button>
           </div>
         </div>
