@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Trash2, Upload, ShieldCheck, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
 import { FileRow, type FileItem } from "./FileRow";
 import { convertToJpeg, renameToJpg } from "@/lib/heic";
 import { buildZip, downloadBlob } from "@/lib/zip";
@@ -13,7 +15,10 @@ export const HeicConverter = () => {
   const [items, setItems] = useState<FileItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [zipping, setZipping] = useState(false);
+  const [quality, setQuality] = useState(80); // percent
   const inputRef = useRef<HTMLInputElement>(null);
+  const qualityRef = useRef(quality);
+  qualityRef.current = quality;
 
   // Queue: track pending IDs and run them with limited concurrency.
   const queueRef = useRef<string[]>([]);
