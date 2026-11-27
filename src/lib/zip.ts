@@ -7,17 +7,24 @@ export type ZipItem = {
 
 export const buildZip = async (items: ZipItem[]): Promise<Blob> => {
   const zip = new JSZip();
-  // Avoid duplicate names by suffixing.
   const used = new Map<string, number>();
+
   for (const item of items) {
-    const base = item.name;
-    const count = used.get(base) ?? 0;
+    const key = item.name.toLowerCase();
+    const count = used.get(key) ?? 0;
     const finalName =
-      count === 0 ? base : base.replace(/(\.[^.]+)?$/, (ext) => `-${count}${ext ?? ""}`);
-    used.set(base, count + 1);
+      count === 0
+        ? item.name
+        : item.name.replace(/(\.[^.]+)?$/, (ext) => `-${count}${ext ?? ""}`);
+    used.set(key, count + 1);
     zip.file(finalName, item.blob);
   }
-  return zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
+
+  return zip.generateAsync({
+    type: "blob",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 },
+  });
 };
 
 export const downloadBlob = (blob: Blob, filename: string) => {
@@ -28,12 +35,13 @@ export const downloadBlob = (blob: Blob, filename: string) => {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  // Defer revoke to allow download to start.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
 export const formatBytes = (bytes: number): string => {
+  if (bytes <= 0) return "0 B";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 };
